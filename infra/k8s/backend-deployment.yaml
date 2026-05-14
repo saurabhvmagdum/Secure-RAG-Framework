@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: isro-rag-backend
+  namespace: isro-rag
+  labels:
+    app: isro-rag-backend
+    component: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: isro-rag-backend
+  template:
+    metadata:
+      labels:
+        app: isro-rag-backend
+        component: backend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: backend
+          image: isro-rag-backend:latest
+          imagePullPolicy: Never  # Air-gapped — images pre-loaded
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: isro-rag-secrets
+            - configMapRef:
+                name: isro-rag-config
+          volumeMounts:
+            - name: model-store
+              mountPath: /opt/isro/models
+              readOnly: true
+            - name: embedding-store
+              mountPath: /opt/isro/embeddings
+              readOnly: true
+            - name: cert-store
+              mountPath: /opt/isro/certs
+              readOnly: true
+            - name: audit-logs
+              mountPath: /var/log/isro-rag/audit
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/v1/ready
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: model-store
+          persistentVolumeClaim:
+            claimName: model-store-pvc
+        - name: embedding-store
+          persistentVolumeClaim:
+            claimName: embedding-store-pvc
+        - name: cert-store
+          secret:
+            secretName: isro-rag-tls-certs
+        - name: audit-logs
+          persistentVolumeClaim:
+            claimName: audit-logs-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: isro-rag-backend
+  namespace: isro-rag
+spec:
+  selector:
+    app: isro-rag-backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+      protocol: TCP
+  type: ClusterIP  # Internal only — no external exposure

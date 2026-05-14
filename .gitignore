@@ -1,0 +1,75 @@
+# ──────────────────────────────────────────────────────────────
+# ISRO Secure On-Premise RAG Framework — .gitignore
+# ──────────────────────────────────────────────────────────────
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+*.whl
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment & secrets — NEVER commit
+.env
+.env.local
+.env.production
+*.pem
+*.key
+*.crt
+*.p12
+
+# Model weights & embeddings — too large for git
+/models/
+/embeddings/
+*.bin
+*.gguf
+*.safetensors
+*.onnx
+
+# Node.js / Frontend
+node_modules/
+.next/
+out/
+frontend/.next/
+frontend/node_modules/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Test / coverage
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Docker
+docker-compose.override.yml
+
+# Infrastructure secrets
+infra/certs/*.pem
+infra/certs/*.key
+infra/certs/*.crt

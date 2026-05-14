@@ -1,0 +1,33 @@
+# ──────────────────────────────────────────────────────────────
+# ISRO Secure On-Premise RAG Framework — Pinned Dependencies
+# ──────────────────────────────────────────────────────────────
+# Install from vendored wheels in air-gapped environments:
+#   pip install --no-index --find-links=/opt/isro/wheels -r requirements.txt
+# ──────────────────────────────────────────────────────────────
+
+# Web Framework
+fastapi>=0.110.0,<1.0.0
+uvicorn[standard]>=0.27.0,<1.0.0
+pydantic>=2.6.0,<3.0.0
+pydantic-settings>=2.1.0,<3.0.0
+
+# OpenSearch (BM25 Lexical Index)
+opensearch-py>=2.4.0,<3.0.0
+
+# Qdrant (Semantic Vector DB)
+qdrant-client>=1.7.0,<2.0.0
+
+# Neo4j (Knowledge Graph)
+neo4j>=5.15.0,<6.0.0
+
+# Security & Auth
+python-jose[cryptography]>=3.3.0,<4.0.0
+passlib[bcrypt]>=1.7.4,<2.0.0
+cryptography>=42.0.0,<43.0.0
+
+# Structured Logging
+structlog>=24.1.0,<25.0.0
+
+# Utilities
+httpx>=0.27.0,<1.0.0
+tenacity>=8.2.0,<9.0.0

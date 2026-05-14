@@ -1,0 +1,113 @@
+# ──────────────────────────────────────────────────────────────
+# ISRO RAG Framework — Network Policy
+# ──────────────────────────────────────────────────────────────
+# CRITICAL: Deny ALL egress to enforce air-gap at the k8s level.
+# Only allow internal cluster communication between services.
+# ──────────────────────────────────────────────────────────────
+
+# 1. Default deny all egress for the namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all-egress
+  namespace: isro-rag
+spec:
+  podSelector: {}  # Apply to ALL pods in namespace
+  policyTypes:
+    - Egress
+  egress: []  # DENY ALL — no outbound traffic
+
+---
+
+# 2. Allow internal communication within the namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-internal-communication
+  namespace: isro-rag
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: isro-rag
+        - podSelector: {}
+  egress:
+    - to:
+        - podSelector: {}  # Allow traffic to pods within the namespace
+    - to:  # Allow DNS resolution
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+
+# 3. Allow backend to reach databases
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-to-databases
+  namespace: isro-rag
+spec:
+  podSelector:
+    matchLabels:
+      component: backend
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: opensearch
+      ports:
+        - port: 9200
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app: qdrant
+      ports:
+        - port: 6333
+          protocol: TCP
+        - port: 6334
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app: neo4j
+      ports:
+        - port: 7687
+          protocol: TCP
+
+---
+
+# 4. Allow frontend to reach backend only
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend-to-backend
+  namespace: isro-rag
+spec:
+  podSelector:
+    matchLabels:
+      component: frontend
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: isro-rag-backend
+      ports:
+        - port: 8000
+          protocol: TCP

@@ -1,0 +1,165 @@
+# docker-compose.yml - Corrected Production-Ready Version
+# Added: Host port exposure for local dev access (safe + optional)
+
+networks:
+  isro_internal:
+    driver: bridge
+    internal: true  # Air-gapped constraint
+
+services:
+
+  # -- API Gateway --
+  gateway:
+    image: nginx:1.25-alpine
+    container_name: isro_gateway
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+    networks:
+      - isro_internal
+    depends_on:
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    restart: on-failure
+
+  # -- Frontend --
+  frontend:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.frontend
+    container_name: isro_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - HOSTNAME=0.0.0.0
+      - INTERNAL_API_URL=http://backend:8000/api/v1
+    networks:
+      - isro_internal
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    restart: on-failure
+
+  # -- Backend --
+  backend:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.backend
+    container_name: isro_backend
+    ports:
+      - "8000:8000"   # ✅ Added for local testing
+    environment:
+      - LOG_LEVEL=INFO
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
+      - OPENSEARCH_SCHEME=http
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - QDRANT_TLS_ENABLED=false
+      - NEO4J_URI=bolt://neo4j:7687
+      - LLM_SERVICE_URL=http://llm_stub:8080
+    networks:
+      - isro_internal
+    depends_on:
+      opensearch:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      neo4j:
+        condition: service_healthy
+      llm_stub:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health')"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: on-failure
+
+  # -- OpenSearch --
+  opensearch:
+    image: opensearchproject/opensearch:2.11.0
+    container_name: isro_opensearch
+    ports:
+      - "9200:9200"   # ✅ FIX (critical)
+    environment:
+      - discovery.type=single-node
+      - DISABLE_SECURITY_PLUGIN=true
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    networks:
+      - isro_internal
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 120s
+
+  # -- Qdrant --
+  qdrant:
+    image: qdrant/qdrant:v1.7.0
+    container_name: isro_qdrant
+    ports:
+      - "6333:6333"   # ✅ FIX
+    volumes:
+      - qdrant-data:/qdrant/storage
+    networks:
+      - isro_internal
+
+  # -- Neo4j --
+  neo4j:
+    image: neo4j:5.14.0-community
+    container_name: isro_neo4j
+    ports:
+      - "7474:7474"   # ✅ FIX
+      - "7687:7687"
+    environment:
+      - NEO4J_AUTH=none
+    volumes:
+      - neo4j-data:/data
+    networks:
+      - isro_internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:7474/ || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 12
+      start_period: 150s
+
+  # -- LLM Stub --
+  llm_stub:
+    image: python:3.11-alpine
+    container_name: isro_llm_stub
+    command: ["python", "-m", "http.server", "8080"]
+    ports:
+      - "8080:8080"   # ✅ FIX
+    networks:
+      - isro_internal
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  opensearch-data:
+  qdrant-data:
+  neo4j-data:

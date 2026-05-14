@@ -1,0 +1,44 @@
+# ──────────────────────────────────────────────────────────────
+# ISRO RAG Framework — Frontend Dockerfile
+# ──────────────────────────────────────────────────────────────
+# Multi-stage build for Next.js standalone output.
+# Air-gapped: assumes npm packages are pre-vendored.
+# ──────────────────────────────────────────────────────────────
+
+# Stage 1: Dependencies
+FROM node:20-alpine AS deps
+WORKDIR /app
+COPY frontend/package.json frontend/package-lock.json* ./
+# For air-gapped: npm install --offline --cache=/opt/isro/npm-cache
+RUN npm ci --ignore-scripts --legacy-peer-deps
+
+# Stage 2: Build
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY frontend/ .
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run build
+
+# Stage 3: Runtime
+FROM node:20-alpine AS runner
+WORKDIR /app
+
+# Security: run as non-root
+RUN addgroup --system --gid 1001 isro && \
+    adduser --system --uid 1001 --ingroup isro isro
+
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3000
+
+# Copy standalone output
+COPY --from=builder /app/public ./public
+COPY --from=builder --chown=isro:isro /app/.next/standalone ./
+COPY --from=builder --chown=isro:isro /app/.next/static ./.next/static
+
+USER isro
+
+EXPOSE 3000
+
+CMD ["node", "server.js"]

@@ -1,0 +1,56 @@
+# ──────────────────────────────────────────────────────────────
+# ISRO RAG Framework — Backend Dockerfile
+# ──────────────────────────────────────────────────────────────
+# Multi-stage build. Air-gapped: assumes vendored wheels
+# are available at /opt/isro/wheels inside build context
+# or pre-copied into the image.
+# ──────────────────────────────────────────────────────────────
+
+# Stage 1: Build
+FROM python:3.11-slim as builder
+
+WORKDIR /build
+
+# Install build dependencies
+RUN apt-get update -o Acquire::Retries=3 && \
+    apt-get install -y --no-install-recommends build-essential && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first for layer caching
+COPY backend/requirements.txt .
+
+# Install Python dependencies
+# For air-gapped: pip install --no-index --find-links=/opt/isro/wheels -r requirements.txt
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# Stage 2: Runtime
+FROM python:3.11-slim as runtime
+
+# Security: run as non-root
+RUN groupadd -r isro && useradd -r -g isro -d /app -s /sbin/nologin isro
+
+WORKDIR /app
+
+# Copy installed packages from builder
+COPY --from=builder /root/.local /home/isro/.local
+ENV PATH="/home/isro/.local/bin:${PATH}"
+
+# Copy application code
+COPY backend/app ./app
+
+# Create necessary directories
+RUN mkdir -p /var/log/isro-rag/audit && \
+    chown -R isro:isro /var/log/isro-rag
+
+# Security hardening
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    PYTHONUSERBASE=/home/isro/.local
+
+# Switch to non-root user
+USER isro
+
+EXPOSE 8000
+
+CMD ["uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]

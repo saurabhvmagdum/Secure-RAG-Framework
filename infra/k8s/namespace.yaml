@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: isro-rag
+  labels:
+    app.kubernetes.io/name: isro-rag-framework
+    app.kubernetes.io/part-of: isro-rag
+    environment: production
+    security.isro.gov.in/classification: internal

@@ -1,0 +1,147 @@
+# ──────────────────────────────────────────────────────────────
+# ISRO RAG Framework — Docker Compose
+# ──────────────────────────────────────────────────────────────
+# All services run on an internal network ONLY.
+# No external ports except the frontend UI.
+# No internet access from any container.
+# ──────────────────────────────────────────────────────────────
+
+version: "3.9"
+
+services:
+  # ── Backend API ──────────────────────────────────────────────
+  backend:
+    build:
+      context: ../../
+      dockerfile: infra/docker/Dockerfile.backend
+    container_name: isro-rag-backend
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    ports:
+      - "8000:8000"
+    volumes:
+      - audit-logs:/var/log/isro-rag/audit
+      - model-store:/opt/isro/models:ro
+      - embedding-store:/opt/isro/embeddings:ro
+      - cert-store:/opt/isro/certs:ro
+    networks:
+      - isro-internal
+    depends_on:
+      opensearch:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── Frontend UI ──────────────────────────────────────────────
+  frontend:
+    build:
+      context: ../../
+      dockerfile: infra/docker/Dockerfile.frontend
+    container_name: isro-rag-frontend
+    restart: unless-stopped
+    environment:
+      - NEXT_PUBLIC_API_BASE_URL=http://backend:8000/api/v1
+    ports:
+      - "3000:3000"
+    networks:
+      - isro-internal
+    depends_on:
+      - backend
+
+  # ── OpenSearch (BM25 Lexical Index) ──────────────────────────
+  opensearch:
+    image: opensearchproject/opensearch:2.12.0
+    container_name: isro-rag-opensearch
+    restart: unless-stopped
+    environment:
+      - cluster.name=isro-rag-cluster
+      - node.name=opensearch-node1
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+      - DISABLE_SECURITY_PLUGIN=false
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    networks:
+      - isro-internal
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ── Qdrant (Semantic Vector DB) ──────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:v1.7.4
+    container_name: isro-rag-qdrant
+    restart: unless-stopped
+    volumes:
+      - qdrant-data:/qdrant/storage
+    networks:
+      - isro-internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:6333/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── Neo4j (Knowledge Graph) ─────────────────────────────────
+  neo4j:
+    image: neo4j:5.15-community
+    container_name: isro-rag-neo4j
+    restart: unless-stopped
+    environment:
+      - NEO4J_AUTH=neo4j/changeme
+      - NEO4J_PLUGINS=[]
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+    volumes:
+      - neo4j-data:/data
+      - neo4j-logs:/logs
+    networks:
+      - isro-internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+# ── Volumes ──────────────────────────────────────────────────────────────
+volumes:
+  opensearch-data:
+    driver: local
+  qdrant-data:
+    driver: local
+  neo4j-data:
+    driver: local
+  neo4j-logs:
+    driver: local
+  audit-logs:
+    driver: local
+  model-store:
+    driver: local
+  embedding-store:
+    driver: local
+  cert-store:
+    driver: local
+
+# ── Network ──────────────────────────────────────────────────────────────
+networks:
+  isro-internal:
+    driver: bridge
+    internal: true  # NO external access — air-gapped enforcement
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
